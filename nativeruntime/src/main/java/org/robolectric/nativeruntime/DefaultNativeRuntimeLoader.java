@@ -6,7 +6,6 @@ import static android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
 import static android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM;
 import static com.google.common.base.StandardSystemProperty.OS_ARCH;
 import static com.google.common.base.StandardSystemProperty.OS_NAME;
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 import android.database.CursorWindow;
 import android.graphics.Typeface;
@@ -358,8 +357,7 @@ public class DefaultNativeRuntimeLoader implements NativeRuntimeLoader {
     java.nio.file.Files.createDirectories(icuPath);
     if (Build.VERSION.SDK_INT <= UPSIDE_DOWN_CAKE) {
       URL icuDatUrl = Resources.getResource(ICU_DIR + "/icudt68l.dat");
-      Resources.asByteSource(icuDatUrl)
-          .copyTo(Files.asByteSink(icuPath.resolve("icudt68l.dat").toFile()));
+      copyResource(icuDatUrl, icuPath.resolve("icudt68l.dat"));
       return;
     }
     // Read the dat file straight out of the archive that keyed this directory rather than
@@ -376,7 +374,7 @@ public class DefaultNativeRuntimeLoader implements NativeRuntimeLoader {
         throw new IOException("Unexpected ICU data entry name: " + icuDatEntry.getName());
       }
       try (InputStream input = jarFile.getInputStream(icuDatEntry)) {
-        java.nio.file.Files.copy(input, icuDatPath, REPLACE_EXISTING);
+        copyResource(input, icuDatPath);
       }
     }
   }
@@ -466,7 +464,7 @@ public class DefaultNativeRuntimeLoader implements NativeRuntimeLoader {
           String resourcePath = directoryName + "/" + path.getFileName();
           URL resource = Resources.getResource(resourcePath);
           Path outputPath = baseDir.resolve(resourcePath);
-          Resources.asByteSource(resource).copyTo(Files.asByteSink(outputPath.toFile()));
+          copyResource(resource, outputPath);
         }
       }
     } finally {
@@ -588,7 +586,7 @@ public class DefaultNativeRuntimeLoader implements NativeRuntimeLoader {
     Path libraryPath = tempDirectory.getBasePath().resolve(libraryName());
     URL libraryResource = Resources.getResource(nativeLibraryPath());
     Logger.info("Loading android native library from: %s", libraryResource);
-    Resources.asByteSource(libraryResource).copyTo(Files.asByteSink(libraryPath.toFile()));
+    copyResource(libraryResource, libraryPath);
     try {
       System.load(libraryPath.toAbsolutePath().toString());
     } catch (IllegalCallerException e) {
@@ -603,6 +601,22 @@ public class DefaultNativeRuntimeLoader implements NativeRuntimeLoader {
               + "    jvmArgs '--enable-native-access=ALL-UNNAMED'\n"
               + "  }",
           e);
+    }
+  }
+
+  private static void copyResource(URL resource, Path destination) throws IOException {
+    try (InputStream input = Resources.asByteSource(resource).openStream()) {
+      copyResource(input, destination);
+    }
+  }
+
+  private static void copyResource(InputStream input, Path destination) throws IOException {
+    try (var output = Files.asByteSink(destination.toFile()).openStream()) {
+      byte[] buffer = new byte[256 * 1024];
+      int count;
+      while ((count = input.read(buffer)) != -1) {
+        output.write(buffer, 0, count);
+      }
     }
   }
 
